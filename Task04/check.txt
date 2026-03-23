@@ -1,0 +1,45 @@
+# check.txt - Checklist for get_triangle_type() function testing
+
+## POSITIVE TEST CASES
+
+1. a=2, b=2, c=2
+   Expected: "equilateral"
+   Description: All sides equal
+
+2. a=5, b=5, c=3
+   Expected: "isosceles"
+   Description: Two sides equal
+
+3. a=3, b=4, c=5
+   Expected: "nonequilateral" (scalene)
+   Description: All sides different (right triangle)
+
+4. a=6, b=8, c=10
+   Expected: "nonequilateral"
+   Description: All sides different (another valid triangle)
+
+5. a=1.5, b=1.5, c=1.5
+   Expected: "equilateral"
+   Description: Float values - equilateral
+
+## NEGATIVE TEST CASES
+
+6. a=0, b=1, c=1
+   Expected: IncorrectTriangleSides exception
+   Description: Zero side length
+
+7. a=-1, b=2, c=2
+   Expected: IncorrectTriangleSides exception
+   Description: Negative side length
+
+8. a=1, b=2, c=3
+   Expected: IncorrectTriangleSides exception
+   Description: Triangle inequality violated (sum of two sides equals third)
+
+9. a=1, b=1, c=3
+   Expected: IncorrectTriangleSides exception
+   Description: Triangle inequality violated (sum of two sides less than third)
+
+10. a="a", b=2, c=3
+    Expected: IncorrectTriangleSides exception
+    Description: Non-numeric side value
