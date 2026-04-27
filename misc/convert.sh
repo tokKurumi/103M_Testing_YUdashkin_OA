@@ -1,8 +1,10 @@
 #!/bin/bash
-# Convert Markdown to DOCX via pandoc
+# Convert Markdown via pandoc.
 # Usage:
-#   ./convert.sh <directory>  — convert all .md files in a directory
-#   ./convert.sh <file.md>    — convert a single file
+#   ./convert.sh <directory> [docx|pdf]  - convert all .md files in a directory
+#   ./convert.sh <file.md> [docx|pdf]    - convert a single file
+#
+# Default format is docx.
 
 set -euo pipefail
 
@@ -13,19 +15,56 @@ fi
 
 if [[ $# -lt 1 ]]; then
     echo "Usage:"
-    echo "  $0 <directory>  — convert all .md files in a directory"
-    echo "  $0 <file.md>    — convert a single file"
+    echo "  $0 <directory> [docx|pdf]  - convert all .md files in a directory"
+    echo "  $0 <file.md> [docx|pdf]    - convert a single file"
+    exit 1
+fi
+
+target="$1"
+format="${2:-docx}"
+
+if [[ "$format" != "docx" && "$format" != "pdf" ]]; then
+    echo "Error: unsupported format '$format'"
+    echo "Supported formats: docx, pdf"
     exit 1
 fi
 
 convert_file() {
     local src="$1"
-    local dst="${src%.md}.docx"
-    pandoc "$src" -o "$dst"
+    local dst="${src%.md}.${format}"
+    local src_dir
+    src_dir="$(dirname "$src")"
+
+    if [[ "$format" == "docx" ]]; then
+        pandoc "$src" --resource-path="$src_dir" -o "$dst"
+    else
+        # Preferred path for robust image support: markdown -> docx -> pdf.
+        local tmp_docx
+        tmp_docx="$(mktemp "$src_dir/.pandoc-pdf-XXXXXX.docx")"
+        pandoc "$src" --resource-path="$src_dir" -o "$tmp_docx"
+
+        if command -v soffice &>/dev/null; then
+            local tmp_pdf
+            tmp_pdf="${tmp_docx%.docx}.pdf"
+            soffice --headless --convert-to pdf --outdir "$src_dir" "$tmp_docx" >/dev/null 2>&1
+
+            if [[ -f "$tmp_pdf" ]]; then
+                mv -f "$tmp_pdf" "$dst"
+            else
+                rm -f "$tmp_docx"
+                echo "Error: failed to convert DOCX to PDF via soffice"
+                exit 1
+            fi
+        else
+            # Fallback path when LibreOffice is unavailable.
+            pandoc "$src" --resource-path="$src_dir" -o "$dst"
+        fi
+
+        rm -f "$tmp_docx"
+    fi
+
     echo "OK: $src -> $dst"
 }
-
-target="$1"
 
 if [[ -d "$target" ]]; then
     count=0
