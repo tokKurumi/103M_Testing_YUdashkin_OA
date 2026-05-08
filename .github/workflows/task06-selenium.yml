@@ -83,13 +83,13 @@ jobs:
 
       - name: Upload Pages artifact
         if: always()
-        uses: actions/upload-pages-artifact@v1
+        uses: actions/upload-pages-artifact@v3
         with:
           path: Task06/src/report-site
 
       - name: Deploy to GitHub Pages
         if: always()
-        uses: actions/deploy-pages@v1
+        uses: actions/deploy-pages@v4
 
       - name: Print test-runner logs
         if: always()
