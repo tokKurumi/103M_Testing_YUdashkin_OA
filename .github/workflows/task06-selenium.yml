@@ -12,15 +12,106 @@ on:
 jobs:
   selenium-tests:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Run Selenium tests via Docker Compose
+      - name: Pull Docker images
         working-directory: Task06/src
-        run: docker compose up --build --exit-code-from test-runner
+        run: docker compose pull
+
+      - name: Build and start services (detached)
+        working-directory: Task06/src
+        run: docker compose up --build -d
+
+      - name: Wait for test-runner to finish and record exit code
+        working-directory: Task06/src
+        run: |
+          CID=$(docker compose ps -q test-runner)
+          if [ -z "$CID" ]; then
+            echo "test-runner container not found" >&2
+            echo "0" > test-results/exit-code || true
+            exit 1
+          fi
+          docker wait "$CID"
+          EXIT=$(docker inspect "$CID" --format='{{.State.ExitCode}}' || true)
+          mkdir -p test-results
+          echo "$EXIT" > test-results/exit-code
+          echo "test-runner exit code: $EXIT"
+
+      - name: Export test-runner test results
+        if: always()
+        working-directory: Task06/src
+        run: |
+          CID=$(docker compose ps -q test-runner)
+          if [ -n "$CID" ]; then
+            mkdir -p test-results
+            docker cp "$CID":/root/.local/share/dotnet/runfile/. ./test-results/raw || true
+            TEST_RESULTS_DIR=$(find ./test-results/raw -type d -path '*/bin/debug/TestResults' | head -n 1 || true)
+            if [ -n "$TEST_RESULTS_DIR" ]; then
+              cp -R "$TEST_RESULTS_DIR"/. ./test-results/
+              echo "Copied $TEST_RESULTS_DIR to ./test-results"
+            else
+              echo "TestResults directory not found"
+            fi
+            rm -rf ./test-results/raw
+            echo "=== TRX files (first 200 lines) ==="
+            find ./test-results -type f -name '*.trx' -print -exec sed -n '1,200p' {} \; || true
+            echo "=== HTML reports (first 200 lines) ==="
+            find ./test-results -type f -iname '*report.html' -print -exec sed -n '1,200p' {} \; || true
+          else
+            echo "test-runner container not found"
+          fi
+
+      - name: Prepare HTML report site for Pages
+        if: always()
+        working-directory: Task06/src
+        run: |
+          rm -rf report-site || true
+          mkdir -p report-site
+          # Prefer the first *report.html file as index
+          R=$(find ./test-results -type f -iname '*report.html' | head -n1 || true)
+          if [ -n "$R" ]; then
+            cp "$R" report-site/index.html
+            echo "Prepared report-site/index.html"
+          else
+            echo "No HTML report found to deploy"
+          fi
+
+      - name: Upload Pages artifact
+        if: always()
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: Task06/src/report-site
+
+      - name: Deploy to GitHub Pages
+        if: always()
+        uses: actions/deploy-pages@v1
+
+      - name: Print test-runner logs
+        if: always()
+        working-directory: Task06/src
+        run: docker compose logs --no-color test-runner || true
 
       - name: Shutdown Docker Compose
         if: always()
         working-directory: Task06/src
         run: docker compose down -v
+
+      - name: Fail job if tests failed
+        if: always()
+        working-directory: Task06/src
+        run: |
+          if [ -f test-results/exit-code ]; then
+            EXIT=$(cat test-results/exit-code)
+            echo "Recorded test-runner exit code: $EXIT"
+            if [ "$EXIT" -ne 0 ]; then
+              echo "Failing job because tests exited with $EXIT"
+              exit $EXIT
+            fi
+          else
+            echo "No exit-code file found; cannot determine test result"
+          fi
