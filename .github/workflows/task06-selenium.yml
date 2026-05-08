@@ -20,9 +20,11 @@ jobs:
       contents: read
       pages: write
       id-token: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Pull Docker images
         working-directory: Task06/src
         run: docker compose pull
@@ -37,9 +39,11 @@ jobs:
           CID=$(docker compose ps -q test-runner)
           if [ -z "$CID" ]; then
             echo "test-runner container not found" >&2
-            echo "0" > test-results/exit-code || true
+            mkdir -p test-results
+            echo "1" > test-results/exit-code || true
             exit 1
           fi
+
           docker wait "$CID"
           EXIT=$(docker inspect "$CID" --format='{{.State.ExitCode}}' || true)
           mkdir -p test-results
@@ -52,22 +56,27 @@ jobs:
         run: |
           CID=$(docker compose ps -q test-runner)
           if [ -n "$CID" ]; then
-            mkdir -p test-results
+            echo "Found test-runner container: $CID"
+            mkdir -p test-results/raw test-results
+            # Copy test results
             docker cp "$CID":/root/.local/share/dotnet/runfile/. ./test-results/raw || true
-            TEST_RESULTS_DIR=$(find ./test-results/raw -type d -path '*/bin/debug/TestResults' | head -n 1 || true)
-            if [ -n "$TEST_RESULTS_DIR" ]; then
-              cp -R "$TEST_RESULTS_DIR"/. ./test-results/
-              echo "Copied $TEST_RESULTS_DIR to ./test-results"
+
+            # Find and rename HTML report to index.html
+            REPORT=$(find ./test-results/raw -type f -iname "*report.html" | head -n1 || true)
+
+            if [ -n "$REPORT" ]; then
+              cp "$REPORT" ./test-results/index.html
+              echo "HTML report found and renamed to index.html"
+              echo "Original path: $REPORT"
             else
-              echo "TestResults directory not found"
+              echo "No HTML report found"
+              echo '<h1>Report not found</h1><p>Check GitHub Actions logs</p>' > ./test-results/index.html
             fi
+
             rm -rf ./test-results/raw
-            echo "=== TRX files (first 200 lines) ==="
-            find ./test-results -type f -name '*.trx' -print -exec sed -n '1,200p' {} \; || true
-            echo "=== HTML reports (first 200 lines) ==="
-            find ./test-results -type f -iname '*report.html' -print -exec sed -n '1,200p' {} \; || true
           else
             echo "test-runner container not found"
+            echo '<h1>Report not found</h1><p>Test runner container not found</p>' > ./test-results/index.html
           fi
 
       - name: Prepare HTML report site for Pages
@@ -76,27 +85,27 @@ jobs:
         run: |
           rm -rf report-site || true
           mkdir -p report-site
-          # Prefer the first *report.html file as index
-          R=$(find ./test-results -type f -iname '*report.html' | head -n1 || true)
-          if [ -n "$R" ]; then
-            cp "$R" report-site/index.html
+
+          if [ -f test-results/index.html ]; then
+            cp test-results/index.html report-site/index.html
             echo "Prepared report-site/index.html"
           else
-            echo "No HTML report found to deploy"
+            echo '<h1>Report not found</h1><p>Check GitHub Actions logs for details</p>' > report-site/index.html
+            echo "Created placeholder index.html"
           fi
 
       - name: Upload Pages artifact
         if: always()
         uses: actions/upload-pages-artifact@v4
         with:
-          name: task06-pages
+          name: task06-selenium-report
           path: Task06/src/report-site
 
       - name: Deploy to GitHub Pages
         if: always()
         uses: actions/deploy-pages@v4
         with:
-          artifact_name: task06-pages
+          artifact_name: task06-selenium-report
 
       - name: Print test-runner logs
         if: always()
@@ -118,7 +127,7 @@ jobs:
             if [ "$EXIT" -ne 0 ]; then
               echo "Failing job because tests exited with $EXIT"
               exit $EXIT
+            else
+              echo "All tests passed successfully"
             fi
-          else
-            echo "No exit-code file found; cannot determine test result"
           fi
