@@ -1,0 +1,14 @@
+services:
+  selenium:
+    image: selenium/standalone-chrome:latest
+    shm_size: 2gb
+
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - selenium
+    environment:
+      PORTFOLIO_BASE_URL: "https://portfolio.yudashkin-dev.ru/"
+      SELENIUM_REMOTE_URL: "http://selenium:4444/wd/hub"

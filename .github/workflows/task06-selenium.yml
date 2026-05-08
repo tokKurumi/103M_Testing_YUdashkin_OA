@@ -1,0 +1,26 @@
+name: Task06 Selenium
+
+on:
+  push:
+    branches:
+      - master
+      - Task06
+    paths:
+      - Task06/**
+      - .github/workflows/task06-selenium.yml
+
+jobs:
+  selenium-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Selenium tests via Docker Compose
+        working-directory: Task06/src
+        run: docker compose up --build --exit-code-from test-runner
+
+      - name: Shutdown Docker Compose
+        if: always()
+        working-directory: Task06/src
+        run: docker compose down -v
