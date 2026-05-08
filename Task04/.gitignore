@@ -129,6 +129,3 @@ dmypy.json
 *.swo
 *~
 .DS_Store
-Task06/artifacts/
-Task06/PortfolioSelenium.Tests/bin/
-Task06/PortfolioSelenium.Tests/obj/
