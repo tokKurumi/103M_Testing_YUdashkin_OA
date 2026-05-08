@@ -29,56 +29,48 @@ jobs:
         working-directory: Task06/src
         run: docker compose pull
 
-      - name: Build and start services (detached)
+      - name: Build and start services
         working-directory: Task06/src
         run: docker compose up --build -d
 
-      - name: Wait for test-runner to finish
-        working-directory: Task06/src
-        run: |
-          CID=$(docker compose ps -q test-runner)
-          if [ -z "$CID" ]; then
-            echo "test-runner container not found" >&2
-            exit 1
-          fi
-          echo "Waiting for test-runner (CID: $CID)..."
-          docker wait "$CID"
-          EXIT=$(docker inspect "$CID" --format='{{.State.ExitCode}}' || echo "1")
-          echo "test-runner exit code: $EXIT"
-          echo "$EXIT" > test-results/exit-code || true
-
-      - name: Export test results and prepare report
+      - name: Run tests and export report
         if: always()
         working-directory: Task06/src
         run: |
           mkdir -p test-results report-site
           
-          # Try to find the test-runner container (even if stopped)
-          CID=$(docker compose ps -q test-runner || echo "")
-          
-          if [ -n "$CID" ]; then
-            echo "Found test-runner container: $CID"
-            
-            # Copy results from container
-            docker cp "$CID":/root/.local/share/dotnet/runfile/. ./test-results/raw 2>/dev/null || true
-            
-            # Find HTML report and rename it to index.html
-            REPORT=$(find ./test-results/raw -type f -iname "*report.html" | head -n1 || true)
-            
-            if [ -n "$REPORT" ]; then
-              cp "$REPORT" report-site/index.html
-              echo "Successfully copied and renamed report to index.html"
-              echo "Original: $REPORT"
-            else
-              echo "HTML report not found inside container"
-              echo '<h1>Report not found</h1><p>HTML report was not found in test results.</p>' > report-site/index.html
-            fi
-          else
+          CID=$(docker compose ps -q test-runner)
+          if [ -z "$CID" ]; then
             echo "test-runner container not found"
-            echo '<h1>Report not found</h1><p>Test runner container was not found.</p>' > report-site/index.html
+            echo '<h1>Report not found</h1><p>Test runner container not found.</p>' > report-site/index.html
+            echo "1" > test-results/exit-code
+            exit 1
           fi
 
-          # Cleanup raw folder
+          echo "Waiting for test-runner (CID: $CID)..."
+          docker wait "$CID"
+          
+          EXIT_CODE=$(docker inspect "$CID" --format='{{.State.ExitCode}}' || echo "1")
+          echo "Test exit code: $EXIT_CODE"
+          echo "$EXIT_CODE" > test-results/exit-code
+
+          # Copy test results immediately
+          echo "Copying test results from container..."
+          docker cp "$CID":/root/.local/share/dotnet/runfile/. ./test-results/raw 2>/dev/null || true
+
+          # Find HTML report and rename to index.html
+          REPORT=$(find ./test-results/raw -type f -iname "*report.html" | head -n1 || true)
+
+          if [ -n "$REPORT" ]; then
+            cp "$REPORT" report-site/index.html
+            echo "Successfully copied report → index.html"
+            echo "Original path: $REPORT"
+          else
+            echo "HTML report not found"
+            echo '<h1>Report not found</h1><p>HTML report file was not found in test results.</p>' > report-site/index.html
+          fi
+
+          # Cleanup
           rm -rf ./test-results/raw 2>/dev/null || true
 
       - name: Upload Pages artifact
@@ -94,12 +86,12 @@ jobs:
         with:
           artifact_name: task06-selenium-report
 
-      - name: Print test-runner logs
+      - name: Print test logs
         if: always()
         working-directory: Task06/src
         run: docker compose logs --no-color test-runner || true
 
-      - name: Shutdown Docker Compose
+      - name: Shutdown services
         if: always()
         working-directory: Task06/src
         run: docker compose down -v
@@ -110,9 +102,9 @@ jobs:
         run: |
           if [ -f test-results/exit-code ]; then
             EXIT=$(cat test-results/exit-code)
-            echo "Test exit code: $EXIT"
+            echo "Final test exit code: $EXIT"
             if [ "$EXIT" -ne 0 ]; then
-              echo "Tests failed with code $EXIT"
+              echo "Tests failed"
               exit $EXIT
             else
               echo "All tests passed"
