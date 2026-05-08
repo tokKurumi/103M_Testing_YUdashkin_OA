@@ -33,66 +33,53 @@ jobs:
         working-directory: Task06/src
         run: docker compose up --build -d
 
-      - name: Wait for test-runner to finish and record exit code
+      - name: Wait for test-runner to finish
         working-directory: Task06/src
         run: |
           CID=$(docker compose ps -q test-runner)
           if [ -z "$CID" ]; then
             echo "test-runner container not found" >&2
-            mkdir -p test-results
-            echo "1" > test-results/exit-code || true
             exit 1
           fi
-
+          echo "Waiting for test-runner (CID: $CID)..."
           docker wait "$CID"
-          EXIT=$(docker inspect "$CID" --format='{{.State.ExitCode}}' || true)
-          mkdir -p test-results
-          echo "$EXIT" > test-results/exit-code
+          EXIT=$(docker inspect "$CID" --format='{{.State.ExitCode}}' || echo "1")
           echo "test-runner exit code: $EXIT"
+          echo "$EXIT" > test-results/exit-code || true
 
-      - name: Export test-runner test results
+      - name: Export test results and prepare report
         if: always()
         working-directory: Task06/src
         run: |
-          CID=$(docker compose ps -q test-runner)
+          mkdir -p test-results report-site
+          
+          # Try to find the test-runner container (even if stopped)
+          CID=$(docker compose ps -q test-runner || echo "")
+          
           if [ -n "$CID" ]; then
             echo "Found test-runner container: $CID"
-            mkdir -p test-results/raw test-results
-            # Copy test results
-            docker cp "$CID":/root/.local/share/dotnet/runfile/. ./test-results/raw || true
-
-            # Find and rename HTML report to index.html
+            
+            # Copy results from container
+            docker cp "$CID":/root/.local/share/dotnet/runfile/. ./test-results/raw 2>/dev/null || true
+            
+            # Find HTML report and rename it to index.html
             REPORT=$(find ./test-results/raw -type f -iname "*report.html" | head -n1 || true)
-
+            
             if [ -n "$REPORT" ]; then
-              cp "$REPORT" ./test-results/index.html
-              echo "HTML report found and renamed to index.html"
-              echo "Original path: $REPORT"
+              cp "$REPORT" report-site/index.html
+              echo "Successfully copied and renamed report to index.html"
+              echo "Original: $REPORT"
             else
-              echo "No HTML report found"
-              echo '<h1>Report not found</h1><p>Check GitHub Actions logs</p>' > ./test-results/index.html
+              echo "HTML report not found inside container"
+              echo '<h1>Report not found</h1><p>HTML report was not found in test results.</p>' > report-site/index.html
             fi
-
-            rm -rf ./test-results/raw
           else
             echo "test-runner container not found"
-            echo '<h1>Report not found</h1><p>Test runner container not found</p>' > ./test-results/index.html
+            echo '<h1>Report not found</h1><p>Test runner container was not found.</p>' > report-site/index.html
           fi
 
-      - name: Prepare HTML report site for Pages
-        if: always()
-        working-directory: Task06/src
-        run: |
-          rm -rf report-site || true
-          mkdir -p report-site
-
-          if [ -f test-results/index.html ]; then
-            cp test-results/index.html report-site/index.html
-            echo "Prepared report-site/index.html"
-          else
-            echo '<h1>Report not found</h1><p>Check GitHub Actions logs for details</p>' > report-site/index.html
-            echo "Created placeholder index.html"
-          fi
+          # Cleanup raw folder
+          rm -rf ./test-results/raw 2>/dev/null || true
 
       - name: Upload Pages artifact
         if: always()
@@ -123,11 +110,11 @@ jobs:
         run: |
           if [ -f test-results/exit-code ]; then
             EXIT=$(cat test-results/exit-code)
-            echo "Recorded test-runner exit code: $EXIT"
+            echo "Test exit code: $EXIT"
             if [ "$EXIT" -ne 0 ]; then
-              echo "Failing job because tests exited with $EXIT"
+              echo "Tests failed with code $EXIT"
               exit $EXIT
             else
-              echo "All tests passed successfully"
+              echo "All tests passed"
             fi
           fi
