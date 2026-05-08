@@ -1,5 +1,9 @@
 name: Task06 Selenium
 
+concurrency:
+  group: pages-task06-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
@@ -11,7 +15,7 @@ on:
 
 jobs:
   selenium-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pages: write
@@ -83,13 +87,16 @@ jobs:
 
       - name: Upload Pages artifact
         if: always()
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
+          name: task06-pages
           path: Task06/src/report-site
 
       - name: Deploy to GitHub Pages
         if: always()
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: task06-pages
 
       - name: Print test-runner logs
         if: always()
